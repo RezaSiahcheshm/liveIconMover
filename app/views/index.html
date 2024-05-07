@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Icon Placement</title>
+    <style>
+        #ground {
+            position: relative;
+            width: 500px;
+            height: 300px;
+            background-color: #e0e0e0;
+        }
+
+        .icon {
+            position: absolute;
+            cursor: pointer;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            user-select: none;
+        }
+    </style>
+</head>
+<body>
+<button id="addIconBtn">Add Icon</button>
+<div id="ground"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    let isDragging = false;
+    let offsetX, offsetY;
+    let currentIcon;
+
+    const ground = document.getElementById('ground');
+    const addIconBtn = document.getElementById('addIconBtn');
+
+    addIconBtn.addEventListener('click', () => {
+        // Send add icon event to the server via WebSocket
+        websocket.emit('addIcon');
+    });
+
+    document.addEventListener('mousedown', (e) => {
+        if (e.target.classList.contains('icon')) {
+            isDragging = true;
+            currentIcon = e.target;
+            const rect = ground.getBoundingClientRect();
+            const iconRect = currentIcon.getBoundingClientRect();
+            offsetX = e.clientX - iconRect.left;
+            offsetY = e.clientY - iconRect.top;
+            // Prevent text selection while dragging
+            e.preventDefault();
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        if (isDragging) {
+            isDragging = false;
+            currentIcon = null;
+        }
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (isDragging && currentIcon) {
+            const rect = ground.getBoundingClientRect();
+            const x = e.clientX - rect.left - offsetX;
+            const y = e.clientY - rect.top - offsetY;
+
+            // Ensure the icon remains within the bounds of the ground
+            const maxX = rect.width - currentIcon.offsetWidth;
+            const maxY = rect.height - currentIcon.offsetHeight;
+            const clampedX = Math.min(Math.max(x, 0), maxX);
+            const clampedY = Math.min(Math.max(y, 0), maxY);
+
+            currentIcon.style.left = `${clampedX}px`;
+            currentIcon.style.top = `${clampedY}px`;
+
+            // Send icon coordinates and color to the server via WebSocket
+            const iconData = {
+                id: currentIcon.dataset.id,
+                x: clampedX,
+                y: clampedY,
+                color: currentIcon.style.backgroundColor
+            };
+            websocket.emit('iconData', iconData);
+        }
+    });
+
+    // WebSocket connection
+    const websocket = io();
+
+    websocket.on('iconData', function (iconData) {
+        // Update icon position and color
+        const icon = document.querySelector(`.icon[data-id="${iconData.id}"]`);
+        if (icon) {
+            icon.style.left = `${iconData.x}px`;
+            icon.style.top = `${iconData.y}px`;
+            icon.style.backgroundColor = iconData.color;
+        }
+    });
+
+    websocket.on('addIcon', function (iconData) {
+        // Create and add icon to the ground
+        const icon = document.createElement('div');
+        icon.className = 'icon';
+        icon.dataset.id = iconData.id;
+        icon.style.left = `${Math.random() * (ground.offsetWidth - 50)}px`;
+        icon.style.top = `${Math.random() * (ground.offsetHeight - 50)}px`;
+        icon.style.backgroundColor = getRandomColor(); // Random color
+        ground.appendChild(icon);
+
+        // Send initial icon coordinates and color to the server via WebSocket
+        const initialIconData = {
+            id: iconData.id,
+            x: parseFloat(icon.style.left),
+            y: parseFloat(icon.style.top),
+            color: icon.style.backgroundColor
+        };
+        websocket.emit('iconData', initialIconData);
+    });
+
+    function getRandomColor() {
+        const letters = '0123456789ABCDEF';
+        let color = '#';
+        for (let i = 0; i < 6; i++) {
+            color += letters[Math.floor(Math.random() * 16)];
+        }
+        return color;
+    }
+</script>
+</body>
+</html>
